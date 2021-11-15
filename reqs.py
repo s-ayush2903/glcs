@@ -33,6 +33,9 @@ params = {
 }
 
 projectId = "30942561"
+projectName = "mrsFromCli"
+projectNamespace = "stvayush"
+gitlabInstance = "gitlab.com"
 branches = []
 
 baseUrl = f"https://gitlab.com/api/v4/projects/{projectId}"
@@ -92,38 +95,35 @@ def main():
         shutil.unpack_archive(_, "artiii" + str(ind))
         ind += 1
 
-"""
---------------
-REFACTOR!!!
---------------
-This fn should(and will) ideally capture a map, of jobId to its name, nothing much or less!
-"""
-def fetchArtifsForJob(jobId, jobName):
+def handlePathExistence(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.mkdir(path)
+    return True
+
+
+def fetchArtifsForJob(jobIdNameMapping):
     pwd = os.getcwd()
-    artifsDir = os.path.join(pwd, "artifs")
-    artiUrl = requests.get(f"{baseUrl}/jobs/{jobId}/artifacts", headers=headers, stream=True)
+    baseArtifsDir = os.path.join(pwd, "artifs")
 
-    """
-    --------------
-    FIXME
-    --------------
-    This'll overwrite content when downnloading arifs for multiples jobs in one go!
-    """
-    if os.path.exists(artifsDir):
-        shutil.rmtree(artifsDir)
-    os.mkdir(artifsDir)
+    handlePathExistence(baseArtifsDir)
 
-    baseArchiveName = f"{jobName}Artifs"
-    archiveName = os.path.join(artifsDir, f"{baseArchiveName}.zip")
-    with artiUrl as gld:
-        gld.raise_for_status()
-        with open(archiveName, "wb") as gj:
-            for chunk in gld.iter_content(chunk_size=8192):
-                gj.write(chunk)
-    shutil.unpack_archive(archiveName, f"{artifsDir}/{baseArchiveName}")
-    print("-------------")
-    print(f"Successfully fetched artifs for {jobName}, find the archive at {artifsDir}")
-    print("-------------")
+    for kee in jobIdNameMapping:
+        artifsDir = os.path.join(baseArtifsDir, f"{jobIdNameMapping[kee]}Artifs")
+
+        handlePathExistence(artifsDir)
+        artiUrl = requests.get(f"{baseUrl}/jobs/{kee}/artifacts", headers=headers, stream=True)
+        baseArchiveName = f"{jobIdNameMapping[kee]}Artifs"
+        archiveName = os.path.join(artifsDir, f"{baseArchiveName}.zip")
+
+        with artiUrl as gld:
+            gld.raise_for_status()
+            with open(archiveName, "wb") as gj:
+                for chunk in gld.iter_content(chunk_size=8192):
+                    gj.write(chunk)
+        shutil.unpack_archive(archiveName, f"{baseArtifsDir}/{baseArchiveName}")
+        print("-------------")
+        print(f"Successfully fetched artifs for {jobIdNameMapping[kee]}, find the archive at {artifsDir}")
 
 def listBranches():
     reck = requests.get(f"{baseUrl}/repository/branches", headers=headers)
@@ -140,68 +140,54 @@ def listBranches():
     pipelineForBranch(branches[iid - 1])
 
 def fetchJobsFromPipeline(pipelineId):
-    jobs = {}
     jr = requests.get(f"{baseUrl}/pipelines/{pipelineId}/jobs", headers = headers)
-    # jobsg
-    for response in jr.json():
-        jobs[response["id"]] = response["name"]
-    return jobs
+    return {_["id"] : _["name"] for _ in jr.json()}
 
 
 def pipelineForBranch(branchName):
     print(f"fetching latest successful pipeline for [ {branchName} ]")
     rex = requests.get(f"{baseUrl}/pipelines?refs=branchName&status=success", headers=headers)
     idForLatestSuccessfulPipeline = rex.json()[0]['id']
+
+    print(f"Fetch successful! latest pipeline:\nhttps://{gitlabInstance}/{projectNamespace}/{projectName}/-/pipelines/{idForLatestSuccessfulPipeline}")
+    print("Fetching jobs for it ...")
+
     jobsList = fetchJobsFromPipeline(idForLatestSuccessfulPipeline)
-    print("Fetching jobs...")
+
+    print(jobsList)
     print("-----------")
+    recordCountAndCallArtiFetching(jobsList)
+    return idForLatestSuccessfulPipeline
+
+def recordCountAndCallArtiFetching(jobIdNameMap):
     index = 1
-    for _ in jobsList:
-        print(f"{index}. {jobsList[_]}")
+    for _ in jobIdNameMap:
+        print(f"{index}. {jobIdNameMap[_]}")
         index += 1
+
     print("-----------")
+
     numOfJobs = int(input("Enter NUMBER OF JOBS whose artifs you wanna fetch: "))
 
-    jobId = {}
+    jobsMemo = {}
     print("Enter num CORRESPONDING to job whose artif you're interested in: ")
     for _ in range(numOfJobs):
         jiid = int(input(""))
-        kee = list(jobsList.keys())[jiid - 1]
-        jobId[kee] = jobsList[kee]
+        kee = list(jobIdNameMap.keys())[jiid - 1]
+        jobsMemo[kee] = jobIdNameMap[kee]
     print("Captured Inputs!\nFetching artifs ...")
-    for _ in range(numOfJobs):
-        # Refactor this fn ffs
-        fetchArtifsForJob(list(jobId.keys())[_], jobId[list(jobId.keys())[_]])
+    fetchArtifsForJob(jobsMemo)
 
 def pipelineForMr(mrNo):
     # Will have to send cookies too for this request, as we do not have public API for this specific thing
     # Noooo, can do it without cookies as well :)
     rex = requests.get(f"{baseUrl}/pipelines?refs=refs/merge-requests/{mrNo}/head&status=success", headers=headers)
     idForLatestSuccessfulPipeline = rex.json()[0]['id']
-
-    jbzz = [
-        _["id"]
-        for _ in requests.get(
-            f"{baseUrl}/pipelines/{idForLatestSuccessfulPipeline}/jobs", headers=headers
-        ).json()
-    ]
-
-    jobIdNameMap = {}
-    for jobId in jbzz:
-        jobIdNameMap[jobId] = requests.get(f"{baseUrl}/jobs/{jobId}", headers=headers).json()['name']
+    jobIdNameMap = fetchJobsFromPipeline(idForLatestSuccessfulPipeline)
 
     print("fetched jobs:")
     print("-------------")
-    for job in jobIdNameMap:
-        print(job, jobIdNameMap[job])
-
-    print("-------------")
-    targetJob = int(input("Enter 1 to fetch artifs of Job#1 or 2 for the second one: "))
-    if targetJob == 1 or targetJob == 2:
-        temp = list(jobIdNameMap.keys())[targetJob - 1]
-        fetchArtifsForJob(temp, jobIdNameMap[temp])
-    else:
-        print("invalid entry!")
+    recordCountAndCallArtiFetching(jobIdNameMap)
 
 def queryBranch(branchName: str):
     matches = []
@@ -212,7 +198,8 @@ def queryBranch(branchName: str):
     for _ in matches:
         print(_)
 
-repoUrl = "https://gitlab.com/stvayush/mrsFromCli"
+repoUrl = f"https://{gitlabInstance}/{projectNamespace}/{projectName}"
+
 def masterFn():
     print(f"Fetching list of open MRs from {repoUrl} ...")
     print("-------------")
