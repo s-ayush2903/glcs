@@ -1,3 +1,4 @@
+import os
 import rtvz
 import time
 import requests
@@ -34,6 +35,7 @@ params = {
 projectId = "30942561"
 branches = []
 
+baseUrl = f"https://gitlab.com/api/v4/projects/{projectId}"
 
 def main():
     response = requests.get(
@@ -46,10 +48,9 @@ def main():
     )
     # print(params[0])
 
-    # qry = str(input("enter branch name: "))
+    qry = str(input("enter branch name: "))
     # for sth in response.json():
     #    branches.append(sth['name'])
-    baseUrl = f"https://gitlab.com/api/v4/projects/{projectId}"
     # queryBranch(qry)
     """
     @param absppln: Triggers a new pipeline on the branch specified in `params`
@@ -91,6 +92,60 @@ def main():
         shutil.unpack_archive(_, "artiii" + str(ind))
         ind += 1
 
+def fetchArtifsForJob(jobId, jobName):
+    pwd = os.getcwd()
+    artifsDir = os.path.join(pwd, "artifs")
+    artiUrl = requests.get(f"{baseUrl}/jobs/{jobId}/artifacts", headers=headers, stream=True)
+
+    if os.path.exists(artifsDir):
+        shutil.rmtree(artifsDir)
+    os.mkdir(artifsDir)
+
+    baseArchiveName = f"{jobName}Artifs"
+    archiveName = os.path.join(artifsDir, f"{baseArchiveName}.zip")
+    with artiUrl as gld:
+        gld.raise_for_status()
+        with open(archiveName, "wb") as gj:
+            for chunk in gld.iter_content(chunk_size=8192):
+                gj.write(chunk)
+    shutil.unpack_archive(archiveName, f"{artifsDir}/{baseArchiveName}")
+    print("-------------")
+    print(f"Successfully fetched artifs for {jobName}, find the archive at {artifsDir}")
+    print("-------------")
+
+def pipelineForBranch(branchName):
+    rex = requests.get(f"{baseUrl}/pipelines?refs=branchName&status=success", headers=headers)
+    idForLatestSuccessfulPipeline = rex.json()[0]['id']
+
+def pipelineForMr(mrNo):
+    # Will have to send cookies too for this request, as we do not have public API for this specific thing
+    # Noooo, can do it without cookies as well :)
+    rex = requests.get(f"{baseUrl}/pipelines?refs=refs/merge-requests/{mrNo}/head&status=success", headers=headers)
+    idForLatestSuccessfulPipeline = rex.json()[0]['id']
+
+    jbzz = [
+        _["id"]
+        for _ in requests.get(
+            f"{baseUrl}/pipelines/{idForLatestSuccessfulPipeline}/jobs", headers=headers
+        ).json()
+    ]
+
+    jobIdNameMap = {}
+    for jobId in jbzz:
+        jobIdNameMap[jobId] = requests.get(f"{baseUrl}/jobs/{jobId}", headers=headers).json()['name']
+
+    print("fetched jobs:")
+    print("-------------")
+    for job in jobIdNameMap:
+        print(job, jobIdNameMap[job])
+
+    print("-------------")
+    targetJob = int(input("Enter 1 to fetch artifs of Job#1 or 2 for the second one: "))
+    if targetJob == 1 or targetJob == 2:
+        temp = list(jobIdNameMap.keys())[targetJob - 1]
+        fetchArtifsForJob(temp, jobIdNameMap[temp])
+    else:
+        print("invalid entry!")
 
 def queryBranch(branchName: str):
     matches = []
@@ -101,6 +156,26 @@ def queryBranch(branchName: str):
     for _ in matches:
         print(_)
 
+repoUrl = "https://gitlab.com/stvayush/mrsFromCli"
+def masterFn():
+    print(f"Fetching list of open MRs from {repoUrl} ...")
+    print("-------------")
+    mrResponse = requests.get(f"{baseUrl}/merge_requests?state=opened&order_by=updated_at", headers=headers).json()
+    mrIdTitleMap = {}
+    for mr in mrResponse:
+        mrIdTitleMap[mr['iid']] = mr['title']
 
-if __name__ == "__main__":
-    main()
+    for title in mrIdTitleMap:
+        print(f"{title}: {mrIdTitleMap[title]}")
+
+    print("-------------")
+    mrNum = int(input("Enter the number of mr whose latest pipeline you wish to use: "))
+    if mrNum in mrIdTitleMap.keys():
+        print(f"Fetching latest successful job ran on [ {mrIdTitleMap[mrNum]} | !{mrNum} ]")
+        pipelineForMr(mrNum)
+    else:
+        print("Invalid entry!")
+
+
+masterFn()
+# main()
