@@ -92,11 +92,23 @@ def main():
         shutil.unpack_archive(_, "artiii" + str(ind))
         ind += 1
 
+"""
+--------------
+REFACTOR!!!
+--------------
+This fn should(and will) ideally capture a map, of jobId to its name, nothing much or less!
+"""
 def fetchArtifsForJob(jobId, jobName):
     pwd = os.getcwd()
     artifsDir = os.path.join(pwd, "artifs")
     artiUrl = requests.get(f"{baseUrl}/jobs/{jobId}/artifacts", headers=headers, stream=True)
 
+    """
+    --------------
+    FIXME
+    --------------
+    This'll overwrite content when downnloading arifs for multiples jobs in one go!
+    """
     if os.path.exists(artifsDir):
         shutil.rmtree(artifsDir)
     os.mkdir(artifsDir)
@@ -113,9 +125,53 @@ def fetchArtifsForJob(jobId, jobName):
     print(f"Successfully fetched artifs for {jobName}, find the archive at {artifsDir}")
     print("-------------")
 
+def listBranches():
+    reck = requests.get(f"{baseUrl}/repository/branches", headers=headers)
+    branches = [ _["name"] for _ in reck.json() ]
+    print("Fetching branches...")
+    print("-------------")
+    ind = 1
+    for _ in branches:
+        print(f"{ind}: {_}")
+        ind += 1
+    print("-------------")
+    iid = int(input("Enter the num corresponding to branch which you wish to select: "))
+    print(f"Fixed target: [ {branches[iid - 1]} ] ")
+    pipelineForBranch(branches[iid - 1])
+
+def fetchJobsFromPipeline(pipelineId):
+    jobs = {}
+    jr = requests.get(f"{baseUrl}/pipelines/{pipelineId}/jobs", headers = headers)
+    # jobsg
+    for response in jr.json():
+        jobs[response["id"]] = response["name"]
+    return jobs
+
+
 def pipelineForBranch(branchName):
+    print(f"fetching latest successful pipeline for [ {branchName} ]")
     rex = requests.get(f"{baseUrl}/pipelines?refs=branchName&status=success", headers=headers)
     idForLatestSuccessfulPipeline = rex.json()[0]['id']
+    jobsList = fetchJobsFromPipeline(idForLatestSuccessfulPipeline)
+    print("Fetching jobs...")
+    print("-----------")
+    index = 1
+    for _ in jobsList:
+        print(f"{index}. {jobsList[_]}")
+        index += 1
+    print("-----------")
+    numOfJobs = int(input("Enter NUMBER OF JOBS whose artifs you wanna fetch: "))
+
+    jobId = {}
+    print("Enter num CORRESPONDING to job whose artif you're interested in: ")
+    for _ in range(numOfJobs):
+        jiid = int(input(""))
+        kee = list(jobsList.keys())[jiid - 1]
+        jobId[kee] = jobsList[kee]
+    print("Captured Inputs!\nFetching artifs ...")
+    for _ in range(numOfJobs):
+        # Refactor this fn ffs
+        fetchArtifsForJob(list(jobId.keys())[_], jobId[list(jobId.keys())[_]])
 
 def pipelineForMr(mrNo):
     # Will have to send cookies too for this request, as we do not have public API for this specific thing
@@ -177,5 +233,6 @@ def masterFn():
         print("Invalid entry!")
 
 
-masterFn()
+listBranches()
+# masterFn()
 # main()
