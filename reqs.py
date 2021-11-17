@@ -40,7 +40,8 @@ branches = []
 
 baseUrl = f"https://gitlab.com/api/v4/projects/{projectId}"
 
-def main():
+
+def mainE():
     response = requests.get(
         "https://gitlab.com/api/v4/projects/14486970/repository/branches",
         headers=headers,
@@ -95,6 +96,7 @@ def main():
         shutil.unpack_archive(_, "artiii" + str(ind))
         ind += 1
 
+
 def handlePathExistence(path):
     if os.path.exists(path):
         shutil.rmtree(path)
@@ -112,7 +114,9 @@ def fetchArtifsForJob(jobIdNameMapping):
         artifsDir = os.path.join(baseArtifsDir, f"{jobIdNameMapping[kee]}Artifs")
 
         handlePathExistence(artifsDir)
-        artiUrl = requests.get(f"{baseUrl}/jobs/{kee}/artifacts", headers=headers, stream=True)
+        artiUrl = requests.get(
+            f"{baseUrl}/jobs/{kee}/artifacts", headers=headers, stream=True
+        )
         baseArchiveName = f"{jobIdNameMapping[kee]}Artifs"
         archiveName = os.path.join(artifsDir, f"{baseArchiveName}.zip")
 
@@ -123,11 +127,14 @@ def fetchArtifsForJob(jobIdNameMapping):
                     gj.write(chunk)
         shutil.unpack_archive(archiveName, f"{baseArtifsDir}/{baseArchiveName}")
         print("-------------")
-        print(f"Successfully fetched artifs for {jobIdNameMapping[kee]}, find the archive at {artifsDir}")
+        print(
+            f"Successfully fetched artifs for {jobIdNameMapping[kee]}, find the archive at {artifsDir}"
+        )
+
 
 def listBranches():
     reck = requests.get(f"{baseUrl}/repository/branches", headers=headers)
-    branches = [ _["name"] for _ in reck.json() ]
+    branches = [_["name"] for _ in reck.json()]
     print("Fetching branches...")
     print("-------------")
     ind = 1
@@ -139,17 +146,22 @@ def listBranches():
     print(f"Fixed target: [ {branches[iid - 1]} ] ")
     pipelineForBranch(branches[iid - 1])
 
+
 def fetchJobsFromPipeline(pipelineId):
-    jr = requests.get(f"{baseUrl}/pipelines/{pipelineId}/jobs", headers = headers)
-    return {_["id"] : _["name"] for _ in jr.json()}
+    jr = requests.get(f"{baseUrl}/pipelines/{pipelineId}/jobs", headers=headers)
+    return {_["id"]: _["name"] for _ in jr.json()}
 
 
 def pipelineForBranch(branchName):
     print(f"fetching latest successful pipeline for [ {branchName} ]")
-    rex = requests.get(f"{baseUrl}/pipelines?refs=branchName&status=success", headers=headers)
-    idForLatestSuccessfulPipeline = rex.json()[0]['id']
+    rex = requests.get(
+        f"{baseUrl}/pipelines?refs=branchName&status=success", headers=headers
+    )
+    idForLatestSuccessfulPipeline = rex.json()[0]["id"]
 
-    print(f"Fetch successful! latest pipeline:\nhttps://{gitlabInstance}/{projectNamespace}/{projectName}/-/pipelines/{idForLatestSuccessfulPipeline}")
+    print(
+        f"Fetch successful! latest pipeline:\nhttps://{gitlabInstance}/{projectNamespace}/{projectName}/-/pipelines/{idForLatestSuccessfulPipeline}"
+    )
     print("Fetching jobs for it ...")
 
     jobsList = fetchJobsFromPipeline(idForLatestSuccessfulPipeline)
@@ -158,6 +170,7 @@ def pipelineForBranch(branchName):
     print("-----------")
     recordCountAndCallArtiFetching(jobsList)
     return idForLatestSuccessfulPipeline
+
 
 def recordCountAndCallArtiFetching(jobIdNameMap):
     index = 1
@@ -178,16 +191,26 @@ def recordCountAndCallArtiFetching(jobIdNameMap):
     print("Captured Inputs!\nFetching artifs ...")
     fetchArtifsForJob(jobsMemo)
 
+
 def pipelineForMr(mrNo):
     # Will have to send cookies too for this request, as we do not have public API for this specific thing
     # Noooo, can do it without cookies as well :)
-    rex = requests.get(f"{baseUrl}/pipelines?refs=refs/merge-requests/{mrNo}/head&status=success", headers=headers)
-    idForLatestSuccessfulPipeline = rex.json()[0]['id']
+    resp = "Fetched Jobs:\n"
+    rex = requests.get(
+        f"{baseUrl}/pipelines?refs=refs/merge-requests/{mrNo}/head&status=success",
+        headers=headers,
+    )
+    idForLatestSuccessfulPipeline = rex.json()[0]["id"]
     jobIdNameMap = fetchJobsFromPipeline(idForLatestSuccessfulPipeline)
 
     print("fetched jobs:")
     print("-------------")
-    recordCountAndCallArtiFetching(jobIdNameMap)
+    index = 1
+    for _ in jobIdNameMap:
+        resp += f"{index}. {jobIdNameMap[_]}\n"
+    # recordCountAndCallArtiFetching(jobIdNameMap)
+    return resp
+
 
 def queryBranch(branchName: str):
     matches = []
@@ -198,28 +221,53 @@ def queryBranch(branchName: str):
     for _ in matches:
         print(_)
 
+
 repoUrl = f"https://{gitlabInstance}/{projectNamespace}/{projectName}"
 
+
+def callPipelineFetchFn():
+    respMsg = (
+        f"Fetching latest successful job ran on [ {mrIdTitleMap[mrNum]} | !{mrNum} ]"
+    )
+
+
 def masterFn():
+    responseMessage = ""
     print(f"Fetching list of open MRs from {repoUrl} ...")
     print("-------------")
-    mrResponse = requests.get(f"{baseUrl}/merge_requests?state=opened&order_by=updated_at", headers=headers).json()
+    mrResponse = requests.get(
+        f"{baseUrl}/merge_requests?state=opened&order_by=updated_at", headers=headers
+    ).json()
     mrIdTitleMap = {}
     for mr in mrResponse:
-        mrIdTitleMap[mr['iid']] = mr['title']
+        mrIdTitleMap[mr["iid"]] = mr["title"]
 
     for title in mrIdTitleMap:
-        print(f"{title}: {mrIdTitleMap[title]}")
+        responseMessage += f"{title}: {mrIdTitleMap[title]}\n"
+        # print(f"{title}: {mrIdTitleMap[title]}")
 
-    print("-------------")
-    mrNum = int(input("Enter the number of mr whose latest pipeline you wish to use: "))
-    if mrNum in mrIdTitleMap.keys():
-        print(f"Fetching latest successful job ran on [ {mrIdTitleMap[mrNum]} | !{mrNum} ]")
-        pipelineForMr(mrNum)
-    else:
-        print("Invalid entry!")
+    responseMessage += (
+        "------------\nEnter the NUMBER OF merge request whose latest pipeline you wish to use: "
+    )
+    # print("-------------")
+    # mrNum = int(input("Enter the number of mr whose latest pipeline you wish to use: "))
+    return responseMessage
+   # callPipelineFetchFn(mrIdTitleMap)
+   # if mrNum in mrIdTitleMap.keys():
+   #     print(
+   #         f"Fetching latest successful job ran on [ {mrIdTitleMap[mrNum]} | !{mrNum} ]"
+   #     )
+   #     pipelineForMr(mrNum)
+   # else:
+   #     print("Invalid entry!")
 
+def main():
+    print("-------DK Wut happened-------")
+    pass
 
-listBranches()
-# masterFn()
+if __name__ == "__main__":
+    main()
+    
+
+# listBranches()
 # main()

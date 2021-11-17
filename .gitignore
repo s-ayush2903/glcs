@@ -1,2 +1,8 @@
+artifs/
+.env
+*.txt
+*.zip
+.git/
+.sbv/
 rtvz.py
 __pycache__/
